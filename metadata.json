@@ -1,0 +1,5 @@
+{
+  "name": "Copy of Red Light, Green Light Game",
+  "description": "A competitive game that tests players' concentration, coordination, and self-control. Players must advance towards a finish line during a 'green light' and freeze instantly during a 'red light'. Any movement during a red light results in elimination. Win by reaching the finish line.",
+  "requestFramePermissions": []
+}

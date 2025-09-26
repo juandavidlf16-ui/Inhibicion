@@ -21,3 +21,14 @@ View your app in AI Studio: https://ai.studio/apps/drive/1TEmIpfuUafeVyVwMDbcRhB
 4. Build a static bundle that can be opened directly in the browser:
    `npm run build`
    The optimized files will be placed inside `dist/`. Thanks to the relative asset base configuration you can open `dist/index.html` with a file URL or serve the folder from any static host and the game will boot correctly.
+Codex/improve-game-design-and-textures-f5fxiu
+
+## Jugar en el navegador
+
+Una vez construido el proyecto, abre directamente el juego desde el siguiente enlace local:
+
+➡️ [Abrir el juego](./web-game/index.html)
+
+El vínculo anterior apunta a una copia del paquete generado en `web-game/index.html`. Si clonas el repositorio y ejecutas `npm run build`, podrás actualizar el contenido de esa carpeta (copiando los archivos de `dist/`) y hacer clic en el enlace para lanzar el juego desde tu navegador sin necesidad de un servidor adicional.
+
+main

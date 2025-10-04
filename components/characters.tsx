@@ -276,6 +276,14 @@ const useCharacterStyles = () => {
         }
       }
 
+export const WaverCharacter: React.FC<CharacterProps> = ({ isMoving }) => {
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (document.getElementById('character-animations')) return;
+
+    const style = document.createElement('style');
+    style.id = 'character-animations';
+    style.innerHTML = `
       @keyframes wave {
         0%, 100% { transform: rotate(0deg); }
         50% { transform: rotate(25deg); }

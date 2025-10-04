@@ -54,11 +54,11 @@ export const RunnerCharacter: React.FC<CharacterProps> = ({ isMoving }) => {
 };
 
 export const WaverCharacter: React.FC<CharacterProps> = ({ isMoving }) => {
-  return <WaverSVG />;
-};
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (document.getElementById('character-animations')) return;
 
-const style = document.createElement('style');
-if (!document.getElementById('character-animations')) {
+    const style = document.createElement('style');
     style.id = 'character-animations';
     style.innerHTML = `
       @keyframes wave {
@@ -71,4 +71,7 @@ if (!document.getElementById('character-animations')) {
       }
     `;
     document.head.appendChild(style);
-}
+  }, []);
+
+  return <WaverSVG />;
+};

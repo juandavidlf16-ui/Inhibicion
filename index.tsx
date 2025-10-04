@@ -1,16 +1,3 @@
-
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-
-const rootElement = document.getElementById('root');
-if (!rootElement) {
-  throw new Error("Could not find root element to mount to");
-}
-
-const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+// The content of this file has been moved into index.html
+// to resolve CORS errors when running the game from the local filesystem.
+// This file is no longer used.

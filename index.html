@@ -1,24 +1,17 @@
-
 <!DOCTYPE html>
 <html lang="es">
   <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta charset="UTF-T" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='30' y='10' width='40' height='80' rx='10' fill='%23333'/%3E%3Ccircle cx='50' cy='30' r='10' fill='%23ef4444'/%3E%3Ccircle cx='50' cy='70' r='10' fill='%2322c55e'/%3E%3C/svg%3E" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Luz Roja, Luz Verde</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;900&display=swap" rel="stylesheet">
-  <script type="importmap">
-{
-  "imports": {
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
-    "react/": "https://aistudiocdn.com/react@^19.1.1/",
-    "react": "https://aistudiocdn.com/react@^19.1.1"
-  }
-}
-</script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
 <style>
   body {
     font-family: 'Poppins', sans-serif;
@@ -27,9 +20,853 @@
     text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
   }
 </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "react": "https://aistudiocdn.com/react@^19.1.1"
+  }
+}
+</script>
 </head>
   <body class="bg-gradient-to-b from-gray-900 to-slate-900 text-white">
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
+    <script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// From types.ts
+const GameStatus = {
+  NotStarted: 'not-started',
+  InProgress: 'in-progress',
+  LevelTransition: 'level-transition',
+  Won: 'won',
+  Lost: 'lost',
+};
+
+const LightStatus = {
+  Red: 'red',
+  Green: 'green',
+};
+
+const Character = {
+  Runner: 'runner',
+  Waver: 'waver',
+};
+
+// From hooks/useSounds.ts
+const useSounds = () => {
+    const audioCtxRef = useRef(null);
+    const moveSoundSourceRef = useRef(null);
+    
+    const getAudioContext = useCallback(() => {
+        if (!audioCtxRef.current && typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) {
+            try {
+                audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) {
+                console.error("Web Audio API is not supported in this browser");
+            }
+        }
+        return audioCtxRef.current;
+    }, []);
+
+    const playNote = useCallback((freq, duration, type = 'sine', volume = 0.5) => {
+        const audioCtx = getAudioContext();
+        if (!audioCtx) return;
+
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.type = type;
+        oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        
+        gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + duration);
+    }, [getAudioContext]);
+
+    const playArpeggio = useCallback((notes, duration, type = 'sine') => {
+        const audioCtx = getAudioContext();
+        if (!audioCtx) return;
+        
+        const noteDuration = duration / notes.length;
+        notes.forEach((note, index) => {
+             const osc = audioCtx.createOscillator();
+             const gainNode = audioCtx.createGain();
+             osc.type = type;
+             osc.frequency.setValueAtTime(note, audioCtx.currentTime + index * noteDuration);
+             gainNode.gain.setValueAtTime(0.4, audioCtx.currentTime + index * noteDuration);
+             gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + (index + 1) * noteDuration);
+             osc.connect(gainNode);
+             gainNode.connect(audioCtx.destination);
+             osc.start(audioCtx.currentTime + index * noteDuration);
+             osc.stop(audioCtx.currentTime + (index + 1) * noteDuration);
+        });
+    }, [getAudioContext]);
+
+    const playClick = useCallback(() => playNote(880, 0.1, 'triangle', 0.3), [playNote]);
+    const playStart = useCallback(() => playArpeggio([261, 329, 392, 523], 0.4, 'square'), [playArpeggio]);
+    const playGreenLight = useCallback(() => playNote(622.25, 0.2, 'sine', 0.4), [playNote]);
+    const playRedLight = useCallback(() => playNote(207.65, 0.2, 'sine', 0.4), [playNote]);
+    const playWin = useCallback(() => playArpeggio([523, 659, 784, 1046], 0.6, 'sawtooth'), [playArpeggio]);
+    const playLose = useCallback(() => playArpeggio([392, 349, 311, 261], 0.8, 'square'), [playArpeggio]);
+    const playCaught = useCallback(() => {
+        playNote(155.56, 0.3, 'sawtooth');
+        playNote(164.81, 0.3, 'sawtooth');
+    }, [playNote]);
+    
+    const playMove = useCallback(() => {
+        const audioCtx = getAudioContext();
+        if (!audioCtx || (moveSoundSourceRef.current && moveSoundSourceRef.current.context.state === 'running')) return;
+
+        const duration = 0.15;
+        const bufferSize = audioCtx.sampleRate * duration;
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const output = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            output[i] = (Math.random() * 2 - 1) * 0.5;
+        }
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.loop = true;
+        
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.setValueAtTime(0.04, audioCtx.currentTime);
+        
+        source.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        source.start();
+        moveSoundSourceRef.current = source;
+    }, [getAudioContext]);
+
+    const stopMove = useCallback(() => {
+        if (moveSoundSourceRef.current) {
+            try {
+                moveSoundSourceRef.current.stop();
+                moveSoundSourceRef.current.disconnect();
+            } catch (e) {
+                 // Ignore errors from stopping an already stopped source
+            } finally {
+                moveSoundSourceRef.current = null;
+            }
+        }
+    }, []);
+
+    return { playClick, playStart, playGreenLight, playRedLight, playWin, playLose, playCaught, playMove, stopMove };
+};
+
+// From components/characters.tsx
+const RunnerSVG = ({ pose }) => (
+  <svg width="48" height="48" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="50" cy="20" r="10" stroke="#06b6d4" strokeWidth="6"/>
+    {pose === 1 ? (
+      <>
+        <line x1="50" y1="30" x2="50" y2="60" stroke="#06b6d4" strokeWidth="6"/>
+        <line x1="50" y1="45" x2="30" y2="35" stroke="#06b6d4" strokeWidth="6"/>
+        <line x1="50" y1="45" x2="70" y2="55" stroke="#06b6d4" strokeWidth="6"/>
+        <line x1="50" y1="60" x2="70" y2="85" stroke="#06b6d4" strokeWidth="6"/>
+        <line x1="50" y1="60" x2="30" y2="80" stroke="#06b6d4" strokeWidth="6"/>
+      </>
+    ) : (
+      <>
+        <line x1="50" y1="30" x2="50" y2="60" stroke="#06b6d4" strokeWidth="6"/>
+        <line x1="50" y1="45" x2="70" y2="35" stroke="#06b6d4" strokeWidth="6"/>
+        <line x1="50" y1="45" x2="30" y2="55" stroke="#06b6d4" strokeWidth="6"/>
+        <line x1="50" y1="60" x2="30" y2="85" stroke="#06b6d4" strokeWidth="6"/>
+        <line x1="50" y1="60" x2="70" y2="80" stroke="#06b6d4" strokeWidth="6"/>
+      </>
+    )}
+  </svg>
+);
+
+const WaverSVG = () => (
+    <svg width="48" height="48" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="50" cy="20" r="10" stroke="#facc15" strokeWidth="6"/>
+        <line x1="50" y1="30" x2="50" y2="60" stroke="#facc15" strokeWidth="6"/>
+        <line x1="50" y1="40" x2="30" y2="25" stroke="#facc15" strokeWidth="6" className={'animate-wave'}/>
+        <line x1="50" y1="40" x2="70" y2="55" stroke="#facc15" strokeWidth="6"/>
+        <line x1="50" y1="60" x2={'65'} y2={'85'} stroke="#facc15" strokeWidth="6"/>
+        <line x1="50" y1="60" x2={'35'} y2={'85'} stroke="#facc15" strokeWidth="6"/>
+    </svg>
+);
+
+const RunnerCharacter = ({ isMoving }) => {
+  const [pose, setPose] = useState(1);
+
+  useEffect(() => {
+    if (!isMoving) return;
+    const interval = setInterval(() => {
+      setPose(p => (p === 1 ? 2 : 1));
+    }, 150);
+    return () => clearInterval(interval);
+  }, [isMoving]);
+  
+  return <RunnerSVG pose={isMoving ? pose : 1} />;
+};
+
+const WaverCharacter = ({ isMoving }) => {
+  return <WaverSVG />;
+};
+
+const style = document.createElement('style');
+if (!document.getElementById('character-animations')) {
+    style.id = 'character-animations';
+    style.innerHTML = `
+      @keyframes wave {
+        0%, 100% { transform: rotate(0deg); }
+        50% { transform: rotate(25deg); }
+      }
+      .animate-wave {
+        animation: wave 1s ease-in-out infinite;
+        transform-origin: 35px 35px;
+      }
+    `;
+    document.head.appendChild(style);
+}
+
+// From components/Doll.tsx
+const FlagSVG = ({ color }) => (
+  <svg width="60" height="60" viewBox="0 0 100 100" className="absolute -top-10 -left-2">
+    <line x1="5" y1="95" x2="5" y2="5" stroke="#a16207" strokeWidth="6" strokeLinecap="round" />
+    <rect x="5" y="5" width="70" height="40" fill={color} stroke={color} strokeWidth="2" />
+  </svg>
+);
+
+
+const FlagBearer = ({ lightStatus, isTurning, turnSpeed }) => {
+  const isRed = lightStatus === LightStatus.Red;
+
+  return (
+    <div className="absolute right-8 bottom-12 flex flex-col items-center" style={{ perspective: '1000px' }}>
+        <div 
+            className="transition-transform ease-in-out relative"
+            style={{ 
+                transform: isRed && !isTurning ? 'rotateY(0deg)' : 'rotateY(180deg)',
+                transitionDuration: `${turnSpeed}ms`,
+                transformStyle: 'preserve-3d' 
+            }}
+        >
+            {/* Facing Player (Red Light) */}
+            <div className="w-16 h-32" style={{ backfaceVisibility: 'hidden' }}>
+                 <svg width="64" height="128" viewBox="0 0 100 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="50" cy="25" r="15" fill="#f87171"/>
+                    <rect x="40" y="40" width="20" height="60" rx="10" fill="#f87171" />
+                    <rect x="25" y="95" width="20" height="50" rx="10" fill="#f87171" transform="rotate(-15 25 95)" />
+                    <rect x="55" y="95" width="20" height="50" rx="10" fill="#f87171" transform="rotate(15 55 95)" />
+                    <g transform="translate(30, 45) rotate(-30)">
+                        <rect x="0" y="0" width="15" height="40" rx="7.5" fill="#f87171" />
+                    </g>
+                 </svg>
+                 <FlagSVG color="#ef4444" />
+            </div>
+            {/* Facing Away (Green Light) */}
+            <div className="absolute top-0 left-0 w-16 h-32" style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
+                <svg width="64" height="128" viewBox="0 0 100 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="50" cy="25" r="15" fill="#4ade80"/>
+                    <rect x="40" y="40" width="20" height="60" rx="10" fill="#4ade80" />
+                    <rect x="25" y="95" width="20" height="50" rx="10" fill="#4ade80" transform="rotate(-15 25 95)" />
+                    <rect x="55" y="95" width="20" height="50" rx="10" fill="#4ade80" transform="rotate(15 55 95)" />
+                    <g transform="translate(30, 45) rotate(0)">
+                         <rect x="0" y="0" width="15" height="40" rx="7.5" fill="#4ade80" />
+                    </g>
+                 </svg>
+                 <FlagSVG color="#22c55e" />
+            </div>
+        </div>
+    </div>
+  );
+};
+
+// From components/PlayerTrack.tsx
+const CharacterComponent = ({ character, isMoving }) => {
+  const Comp = character === Character.Runner ? RunnerCharacter : WaverCharacter;
+  return <Comp isMoving={isMoving} />;
+};
+
+
+const PlayerTrack = ({ progress, selectedCharacter, isMoving }) => {
+  const clampedProgress = Math.max(0, Math.min(100, progress));
+
+  return (
+    <>
+      <div 
+        className="absolute bottom-4 transition-all duration-100 ease-linear z-20"
+        style={{ 
+            left: `calc(${clampedProgress}% - ${clampedProgress / 100 * 48}px)`,
+            filter: 'drop-shadow(3px 3px 2px rgba(0, 0, 0, 0.4))'
+        }}
+      >
+        <CharacterComponent character={selectedCharacter} isMoving={isMoving} />
+      </div>
+      {/* Finish Line */}
+      <div 
+        className="absolute right-0 top-0 h-full w-5 z-10"
+        style={{
+          backgroundColor: '#ffffff',
+          backgroundImage: `
+            linear-gradient(45deg, #1f2937 25%, transparent 25%), 
+            linear-gradient(-45deg, #1f2937 25%, transparent 25%), 
+            linear-gradient(45deg, transparent 75%, #1f2937 75%), 
+            linear-gradient(-45deg, transparent 75%, #1f2937 75%)`,
+          backgroundSize: '20px 20px',
+        }}
+      >
+      </div>
+    </>
+  );
+};
+
+// From components/GameOverlay.tsx
+const GameOverlay = ({ gameStatus, onRestart, onRetry, lossReason, currentLevel, lives = 1 }) => {
+
+  if (gameStatus === GameStatus.LevelTransition) {
+    return (
+      <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50 rounded-2xl backdrop-blur-sm">
+        <h2 className="text-6xl font-extrabold text-cyan-400 mb-4 animate-bounce text-shadow">
+          ¡Nivel {currentLevel} Completado!
+        </h2>
+      </div>
+    );
+  }
+
+  if (gameStatus !== GameStatus.Won && gameStatus !== GameStatus.Lost) {
+    return null;
+  }
+
+  const lossMessages = {
+    time: { title: "¡Se Acabó el Tiempo!" },
+    caught: { title: "¡Te Moviste!" },
+  };
+
+  const isGameOver = gameStatus === GameStatus.Lost && lives <= 1;
+
+  const getTitle = () => {
+    if (isGameOver) return "¡Fin del Juego!";
+    if (gameStatus === GameStatus.Won) return "Felicidades, Dominaste el juego y te dominaste a tí";
+    return lossMessages[lossReason || 'caught'].title;
+  };
+
+  return (
+    <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50 rounded-2xl backdrop-blur-sm text-center p-4">
+      <h2 className={`font-black text-white mb-2 animate-pulse text-shadow ${gameStatus === GameStatus.Won ? 'text-5xl leading-tight' : 'text-7xl'}`}>{getTitle()}</h2>
+      {isGameOver && <p className="text-2xl font-bold text-yellow-300 mt-2 text-shadow">¡Inténtalo de nuevo! Esta vez con más calma.</p>}
+      
+      <div className="flex flex-col sm:flex-row gap-4 mt-8">
+        {gameStatus === GameStatus.Won && (
+          <button
+            onClick={onRestart}
+            className="px-8 py-3 text-lg font-bold text-gray-900 bg-yellow-400 rounded-lg shadow-lg hover:bg-yellow-300 active:bg-yellow-500 transform hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-yellow-400/50"
+          >
+            Jugar de Nuevo
+          </button>
+        )}
+        {gameStatus === GameStatus.Lost && (
+          <>
+            {!isGameOver && (
+              <button
+                onClick={onRetry}
+                className="px-8 py-3 text-lg font-bold text-gray-900 bg-yellow-400 rounded-lg shadow-lg hover:bg-yellow-300 active:bg-yellow-500 transform hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-yellow-400/50"
+              >
+                Reintentar Nivel
+              </button>
+            )}
+            <button
+              onClick={onRestart}
+              className="px-8 py-3 text-lg font-bold text-white bg-slate-600 rounded-lg shadow-lg hover:bg-slate-500 active:bg-slate-700 transform hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-slate-500/50"
+            >
+              Menú Principal
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// From App.tsx
+const App = () => {
+  const [gameStatus, setGameStatus] = useState(GameStatus.NotStarted);
+  const [playerPosition, setPlayerPosition] = useState(0);
+  const [playerVelocity, setPlayerVelocity] = useState(0);
+  const [selectedCharacter, setSelectedCharacter] = useState(null);
+  const [selectedDifficulty, setSelectedDifficulty] = useState(null);
+  const [lightStatus, setLightStatus] = useState(LightStatus.Green);
+  const [isDollTurning, setIsDollTurning] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(60);
+  const [lossReason, setLossReason] = useState(null);
+  const [currentLevel, setCurrentLevel] = useState(1);
+  const [dangerPercentage, setDangerPercentage] = useState(0);
+  const [lives, setLives] = useState(0);
+  const [maxLives, setMaxLives] = useState(0);
+  
+  const { playClick, playStart, playGreenLight, playRedLight, playWin, playLose, playCaught, playMove, stopMove } = useSounds();
+
+  const playerPositionRef = useRef(0);
+  const playerVelocityRef = useRef(0);
+  const gameIntervalRef = useRef(null);
+  const timerIntervalRef = useRef(null);
+  const lightCheckIntervalRef = useRef(null);
+  const redLightTimeoutRef = useRef(null);
+  const rightArrowPressed = useRef(false);
+  const greenLightStartTimeRef = useRef(null);
+  const currentGreenLightDurationRef = useRef(0);
+  
+  // Constants
+  const TRACK_LENGTH = 100;
+  const PLAYER_ACCELERATION = 0.012;
+  const PLAYER_DECELERATION = 0.02; // New constant for inertia
+  const PLAYER_MAX_SPEED = 0.35;
+
+  const difficultyLevels = [
+    { level: 1, gameDuration: 70, minGreenLight: 5000, maxGreenLight: 7000, dollTurnSpeed: 500, changeThreshold: 75 },
+    { level: 2, gameDuration: 60, minGreenLight: 4000, maxGreenLight: 6000, dollTurnSpeed: 450, changeThreshold: 65 },
+    { level: 3, gameDuration: 50, minGreenLight: 3000, maxGreenLight: 5000, dollTurnSpeed: 380, changeThreshold: 55 },
+    { level: 4, gameDuration: 45, minGreenLight: 2500, maxGreenLight: 4000, dollTurnSpeed: 300, changeThreshold: 45 },
+    { level: 5, gameDuration: 40, minGreenLight: 2000, maxGreenLight: 3000, dollTurnSpeed: 250, changeThreshold: 35 },
+    { level: 6, gameDuration: 35, minGreenLight: 1500, maxGreenLight: 2500, dollTurnSpeed: 200, changeThreshold: 25 },
+    { level: 7, gameDuration: 30, minGreenLight: 1200, maxGreenLight: 2000, dollTurnSpeed: 160, changeThreshold: 20 },
+  ];
+  
+  const cleanupTimers = useCallback(() => {
+    if (gameIntervalRef.current) clearInterval(gameIntervalRef.current);
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    if (lightCheckIntervalRef.current) clearInterval(lightCheckIntervalRef.current);
+    if (redLightTimeoutRef.current) clearTimeout(redLightTimeoutRef.current);
+    stopMove();
+  }, [stopMove]);
+
+  const resetGame = useCallback(() => {
+      cleanupTimers();
+      playerPositionRef.current = 0;
+      playerVelocityRef.current = 0;
+      setPlayerPosition(0);
+      setPlayerVelocity(0);
+      setLightStatus(LightStatus.Green);
+      setIsDollTurning(false);
+      setLossReason(null);
+      rightArrowPressed.current = false;
+      setDangerPercentage(0);
+      greenLightStartTimeRef.current = null;
+  }, [cleanupTimers]);
+  
+  const setupLevel = useCallback((difficulty) => {
+    setSelectedDifficulty(difficulty);
+    resetGame();
+    setTimeLeft(difficulty.gameDuration);
+    setGameStatus(GameStatus.InProgress);
+    playStart();
+  }, [resetGame, playStart]);
+  
+  const handleRetry = useCallback(() => {
+    playClick();
+    setLives(prev => prev - 1);
+    const currentDifficulty = difficultyLevels[currentLevel - 1];
+    setupLevel(currentDifficulty);
+  }, [currentLevel, setupLevel, playClick]);
+  
+  const startNextLevel = useCallback(() => {
+    const nextLevelValue = currentLevel + 1;
+    if (nextLevelValue > difficultyLevels.length) {
+        setGameStatus(GameStatus.Won);
+        return;
+    }
+    setCurrentLevel(nextLevelValue);
+    const nextDifficulty = difficultyLevels[nextLevelValue - 1];
+    setupLevel(nextDifficulty);
+  }, [currentLevel, setupLevel]);
+  
+    // Sound effect for win/loss
+    useEffect(() => {
+        if (gameStatus === GameStatus.Lost) {
+            stopMove();
+            if (lossReason === 'caught') {
+                playCaught();
+            } else {
+                playLose();
+            }
+        } else if (gameStatus === GameStatus.Won) {
+            stopMove();
+            playWin();
+        }
+    }, [gameStatus, lossReason, playCaught, playLose, playWin, stopMove]);
+
+    // Light change cycle manager
+    useEffect(() => {
+      if (gameStatus !== GameStatus.InProgress || !selectedDifficulty) {
+          return;
+      }
+  
+      const triggerGreenLight = () => {
+          setIsDollTurning(true);
+          setTimeout(() => {
+              setLightStatus(LightStatus.Green);
+              setIsDollTurning(false);
+          }, selectedDifficulty.dollTurnSpeed);
+      };
+  
+      const triggerRedLight = () => {
+          if (lightCheckIntervalRef.current) clearInterval(lightCheckIntervalRef.current);
+          
+          setIsDollTurning(true);
+          setTimeout(() => {
+              setLightStatus(LightStatus.Red);
+              setIsDollTurning(false);
+          }, selectedDifficulty.dollTurnSpeed);
+      };
+  
+      if (lightStatus === LightStatus.Green) {
+          const { minGreenLight, maxGreenLight } = selectedDifficulty;
+          currentGreenLightDurationRef.current = minGreenLight + Math.random() * (maxGreenLight - minGreenLight);
+
+          greenLightStartTimeRef.current = Date.now();
+          playGreenLight();
+  
+          lightCheckIntervalRef.current = window.setInterval(() => {
+              const elapsedTime = Date.now() - (greenLightStartTimeRef.current ?? Date.now());
+              const durationForThisCycle = currentGreenLightDurationRef.current;
+              const safeThresholdPercentage = 20;
+
+              if (elapsedTime >= durationForThisCycle) {
+                  triggerRedLight();
+                  return;
+              }
+  
+              const currentPercentage = (elapsedTime / durationForThisCycle) * 100;
+
+              if (currentPercentage > safeThresholdPercentage) {
+                  const riskyPercentage = (currentPercentage - safeThresholdPercentage) / (100 - safeThresholdPercentage);
+                  const checkInterval = 100;
+                  const exponent = 3;
+                  const chancePerSecond = riskyPercentage ** exponent;
+                  const chancePerInterval = chancePerSecond * (checkInterval / 1000);
+                  
+                  if (Math.random() < chancePerInterval) {
+                      triggerRedLight();
+                  }
+              }
+          }, 100);
+  
+      } else { // lightStatus is Red
+          greenLightStartTimeRef.current = null;
+          setDangerPercentage(0);
+          playRedLight();
+  
+          const redLightDurations = [2000, 3000, 4000, 5000];
+          const redDuration = redLightDurations[Math.floor(Math.random() * redLightDurations.length)];
+  
+          redLightTimeoutRef.current = window.setTimeout(triggerGreenLight, redDuration);
+      }
+  
+      return () => {
+          if (lightCheckIntervalRef.current) clearInterval(lightCheckIntervalRef.current);
+          if (redLightTimeoutRef.current) clearTimeout(redLightTimeoutRef.current);
+      }
+  
+  }, [gameStatus, lightStatus, selectedDifficulty, playGreenLight, playRedLight]);
+
+  // Main Game Loop (Physics and UI updates)
+  useEffect(() => {
+    if (gameStatus === GameStatus.InProgress) {
+      // Game Timer
+      timerIntervalRef.current = window.setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            setLossReason('time');
+            setGameStatus(GameStatus.Lost);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
+      // Physics and Game Logic Loop
+      gameIntervalRef.current = window.setInterval(() => {
+        if (rightArrowPressed.current) {
+          playerVelocityRef.current += PLAYER_ACCELERATION;
+          playerVelocityRef.current = Math.min(playerVelocityRef.current, PLAYER_MAX_SPEED);
+        } else {
+          // Player decelerates due to inertia
+          if (playerVelocityRef.current > 0) {
+            playerVelocityRef.current -= PLAYER_DECELERATION;
+            playerVelocityRef.current = Math.max(0, playerVelocityRef.current); // Prevent negative velocity
+          }
+        }
+        
+        if (playerVelocityRef.current > 0.01 && lightStatus === LightStatus.Red && !isDollTurning) {
+          setLossReason('caught');
+          setGameStatus(GameStatus.Lost);
+        }
+
+        if (lightStatus === LightStatus.Green && greenLightStartTimeRef.current && selectedDifficulty) {
+          const elapsedTime = Date.now() - greenLightStartTimeRef.current;
+          const durationForThisCycle = currentGreenLightDurationRef.current;
+          const percentage = Math.min(100, (elapsedTime / durationForThisCycle) * 100);
+          setDangerPercentage(percentage);
+        }
+  
+        playerPositionRef.current += playerVelocityRef.current;
+        playerPositionRef.current = Math.min(playerPositionRef.current, TRACK_LENGTH);
+        
+        setPlayerPosition(playerPositionRef.current);
+        setPlayerVelocity(playerVelocityRef.current);
+      }, 1000 / 60); // 60 FPS
+    }
+    
+    return cleanupTimers;
+  }, [gameStatus, cleanupTimers, lightStatus, isDollTurning, selectedDifficulty]);
+  
+  // Win Condition Check
+  useEffect(() => {
+    if (playerPosition >= TRACK_LENGTH) {
+      cleanupTimers();
+      if (currentLevel < difficultyLevels.length) {
+        setGameStatus(GameStatus.LevelTransition);
+      } else {
+        setGameStatus(GameStatus.Won);
+      }
+    }
+  }, [playerPosition, currentLevel, cleanupTimers]);
+
+  // Level Transition Handler
+  useEffect(() => {
+    if (gameStatus === GameStatus.LevelTransition) {
+        const transitionTimeout = setTimeout(() => {
+            startNextLevel();
+        }, 3000); // 3-second transition
+
+        return () => clearTimeout(transitionTimeout);
+    }
+  }, [gameStatus, startNextLevel]);
+
+  // Keyboard controls
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'ArrowRight' && gameStatus === GameStatus.InProgress && !rightArrowPressed.current) {
+        rightArrowPressed.current = true;
+        playMove();
+      }
+    };
+    const handleKeyUp = (e) => {
+      if (e.key === 'ArrowRight') {
+        rightArrowPressed.current = false;
+        stopMove();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      stopMove();
+    };
+  }, [gameStatus, playMove, stopMove]);
+
+  const returnToMenu = () => {
+    playClick();
+    setGameStatus(GameStatus.NotStarted);
+    setSelectedCharacter(null);
+    setSelectedDifficulty(null);
+    setCurrentLevel(1);
+    resetGame();
+    setMaxLives(0);
+    setLives(0);
+  };
+  
+  const handleCharacterSelect = (character) => {
+    playClick();
+    setSelectedCharacter(character);
+    setCurrentLevel(1);
+    const initialDifficulty = difficultyLevels[0];
+    setupLevel(initialDifficulty);
+  }
+
+  const handleLifeSelect = (numLives) => {
+    playClick();
+    setMaxLives(numLives);
+    setLives(numLives);
+  };
+  
+  const LivesDisplay = () => (
+      <div className="flex flex-col items-center justify-center w-32 h-24 bg-slate-900/50 rounded-lg border border-slate-700 z-20 shadow-lg p-2">
+           <span className="text-sm font-bold text-slate-400 uppercase tracking-wider text-shadow">Vidas</span>
+           <div className="flex gap-1 mt-2">
+              {Array.from({ length: maxLives }).map((_, i) => (
+                <span key={i} className={`text-3xl transition-colors ${i < lives ? 'text-red-500' : 'text-slate-600'}`} style={{filter: 'drop-shadow(0 0 3px #ef4444)'}}>♥</span>
+              ))}
+           </div>
+      </div>
+  );
+
+  const TimerDisplay = () => (
+      <div className="flex flex-col items-center justify-center w-32 h-24 bg-slate-900/50 rounded-lg border border-slate-700 z-20 shadow-lg p-2">
+           <span className="text-sm font-bold text-slate-400 uppercase tracking-wider text-shadow">Tiempo</span>
+           <span className={`text-4xl font-black ${timeLeft <= 10 ? 'text-red-500 animate-pulse' : 'text-white'} text-shadow`}>
+              {timeLeft}
+          </span>
+      </div>
+  );
+
+  const DangerIndicator = ({ percentage }) => {
+      const getDangerColor = () => {
+          if (percentage > 75) return 'text-red-500';
+          if (percentage > 40) return 'text-yellow-400';
+          return 'text-green-400';
+      };
+
+      return (
+          <div className="flex flex-col items-center justify-center w-32 h-24 bg-slate-900/50 rounded-lg border border-slate-700 z-20 shadow-lg p-2">
+              <span className="text-sm font-bold text-slate-400 uppercase tracking-wider text-shadow">Peligro Rojo</span>
+              <span className={`text-4xl font-black ${getDangerColor()} text-shadow`}>
+                  {Math.floor(percentage)}%
+              </span>
+          </div>
+      );
+  };
+
+  const LevelDisplay = () => (
+    <div className="flex flex-col items-center justify-center w-32 h-24 bg-slate-900/50 rounded-lg border border-slate-700 z-20 shadow-lg p-2">
+        <span className="text-sm font-bold text-slate-400 uppercase tracking-wider text-shadow">Nivel</span>
+        <span className="text-4xl font-black text-cyan-400 text-shadow">{currentLevel}</span>
+    </div>
+  );
+
+  const LifeSelectionScreen = () => (
+      <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center">
+        <h1 className="text-7xl font-black text-slate-100 tracking-wider mb-4 text-shadow" style={{ WebkitTextStroke: '2px #1e293b' }}>Luz Roja, Luz Verde</h1>
+        <p className="text-slate-400 mb-8 text-lg font-semibold">¿Cuántas oportunidades necesitas para superar los 7 niveles?</p>
+        <div className="flex flex-col sm:flex-row gap-8">
+          {[1, 2, 3].map(num => (
+            <button 
+              key={num} 
+              onClick={() => handleLifeSelect(num)} 
+              className="flex flex-col items-center justify-center p-6 border-4 rounded-xl transition-all w-48 text-center bg-slate-800/70 shadow-lg border-slate-700 hover:border-cyan-500 hover:scale-105"
+              aria-label={`Jugar con ${num} ${num === 1 ? 'vida' : 'vidas'}`}
+            >
+              <span className="text-5xl font-black text-cyan-400">{num}</span>
+              <span className="mt-2 font-bold text-slate-300">{num === 1 ? 'Vida' : 'Vidas'}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+  );
+  
+  const CharacterSelectionScreen = () => (
+     <div className="w-full h-full flex flex-col items-center justify-center p-4">
+        <h1 className="text-7xl font-black text-slate-100 tracking-wider mb-4 text-shadow" style={{ WebkitTextStroke: '2px #1e293b' }}>Luz Roja, Luz Verde</h1>
+        <div className="bg-slate-800/50 p-6 rounded-lg border border-slate-700 max-w-2xl text-center mb-8 shadow-lg">
+          <h2 className="text-2xl font-bold text-yellow-300 mb-2">Cómo Jugar</h2>
+          <p className="text-slate-300 text-left space-y-2">
+            <span><strong>Objetivo:</strong> Supera los 7 niveles y llega a la meta final antes de que se acabe el tiempo.</span>
+            <br/>
+            <span><strong>Reglas:</strong> ¡Corre durante la LUZ VERDE y quédate QUIETO durante la LUZ ROJA! Si te mueves durante la luz roja, pierdes una vida.</span>
+             <br/>
+            <span><strong>Control:</strong> Mantén pulsada la <strong>Flecha Derecha</strong> para correr. ¡Suelta para empezar a frenar!</span>
+             <br/>
+            <span><strong>¡Cuidado con la inercia!:</strong> El suelo es resbaladizo y no te detendrás al instante. ¡Anticipa la luz roja para no ser pillado!</span>
+             <br/>
+            <span><strong>¡Ojo al Peligro!:</strong> El indicador de "Peligro Rojo" muestra la probabilidad de que la luz cambie. ¡Cuanto más alto sea el porcentaje, más arriesgado es seguir corriendo!</span>
+          </p>
+        </div>
+        <p className="text-slate-400 mb-8 text-lg font-semibold">Elige tu personaje para empezar.</p>
+        <div className="flex flex-col sm:flex-row gap-8 mb-12">
+            <div 
+              onClick={() => handleCharacterSelect(Character.Runner)} 
+              className={`cursor-pointer p-6 border-4 rounded-xl transition-all w-48 text-center bg-slate-800/70 shadow-lg ${selectedCharacter === Character.Runner ? 'border-cyan-400' : 'border-slate-700 hover:border-cyan-500 hover:scale-105'}`}
+              aria-label="Seleccionar El Corredor" role="button"
+            >
+                <RunnerCharacter isMoving={true} />
+                <p className="mt-2 font-bold text-cyan-400">El Corredor</p>
+            </div>
+            <div 
+              onClick={() => handleCharacterSelect(Character.Waver)} 
+              className={`cursor-pointer p-6 border-4 rounded-xl transition-all w-48 text-center bg-slate-800/70 shadow-lg ${selectedCharacter === Character.Waver ? 'border-yellow-400' : 'border-slate-700 hover:border-yellow-500 hover:scale-105'}`}
+              aria-label="Seleccionar El Saludador" role="button"
+            >
+                <WaverCharacter isMoving={true} />
+                <p className="mt-2 font-bold text-yellow-400">El Saludador</p>
+            </div>
+        </div>
+    </div>
+  );
+  
+  const GameScreen = () => (
+     <div className="w-full h-full flex flex-col items-center justify-center overflow-hidden relative p-4">
+        <GameOverlay gameStatus={gameStatus} onRestart={returnToMenu} onRetry={handleRetry} lossReason={lossReason} currentLevel={currentLevel} lives={lives} />
+        
+        <div className="absolute top-4 left-4 flex gap-4">
+          <LevelDisplay />
+          <LivesDisplay />
+        </div>
+        
+        <div className="absolute top-4 right-4 flex gap-4">
+          <TimerDisplay />
+          <DangerIndicator percentage={dangerPercentage} />
+        </div>
+        
+        {/* Red light screen tint */}
+        <div className={`absolute inset-0 bg-red-800/50 z-10 transition-opacity duration-300 ${lightStatus === LightStatus.Red && !isDollTurning ? 'opacity-100' : 'opacity-0'} pointer-events-none`}></div>
+
+        <div className="w-full text-center mb-4 z-20">
+            <h1 className="text-5xl font-extrabold tracking-wider text-shadow">
+                {lightStatus === LightStatus.Green ? 
+                  <span className="text-green-400">¡Luz Verde - Corre!</span> : 
+                  <span className="text-red-500">¡Luz Roja - Quieto!</span>}
+            </h1>
+            <p className="text-slate-400 text-lg mt-2">
+              Mantén <kbd className="font-sans px-2 py-1.5 text-xs font-semibold text-gray-800 bg-gray-100 border border-gray-200 rounded-lg shadow-sm">Flecha Derecha</kbd> para correr. ¡Suelta para parar!
+            </p>
+        </div>
+
+        <div className="w-full max-w-7xl h-64 border-y-4 border-amber-900/50 relative flex items-center p-4 perspective-800"
+          style={{ 
+            backgroundColor: '#6d4c41',
+            backgroundImage: 'radial-gradient(#a1887f 1.5px, transparent 1.5px)',
+            backgroundSize: '15px 15px',
+            boxShadow: 'inset 0 10px 15px rgba(0,0,0,0.4), inset 0 -10px 15px rgba(0,0,0,0.4)'
+          }}
+        >
+            <PlayerTrack 
+              progress={playerPosition}
+              selectedCharacter={selectedCharacter} 
+              isMoving={playerVelocity > 0.01}
+            />
+             <FlagBearer 
+                lightStatus={lightStatus} 
+                isTurning={isDollTurning} 
+                turnSpeed={selectedDifficulty?.dollTurnSpeed || 500} 
+            />
+        </div>
+        
+     </div>
+  );
+
+
+  return (
+    <main className="min-h-screen text-white font-sans antialiased flex flex-col items-center justify-center">
+        {gameStatus === GameStatus.NotStarted && maxLives === 0 && <LifeSelectionScreen />}
+        {gameStatus === GameStatus.NotStarted && maxLives > 0 && <CharacterSelectionScreen />}
+        {gameStatus !== GameStatus.NotStarted && <GameScreen />}
+    </main>
+  );
+};
+
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error("Could not find root element to mount to");
+}
+
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+    </script>
   </body>
 </html>
